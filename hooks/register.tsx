@@ -5,7 +5,7 @@ import type { Band, Ledger, Limit, ModelLine, MonthView, SessionView, View } fro
 import { detectPlan } from './account'
 import type { Account } from './account'
 import { periodStart, periodStartMs } from './period'
-import { PRICES_DATE, priceTable, usd } from './pricing'
+import { PRICES_DATE, buildTable, calibrate, estimatedPrice, parseOverrides, parseRemote, usd } from './pricing'
 import type { PriceTable, Row } from './pricing'
 import { limitsLine, modelLines, planLine, summarize } from './report'
 
@@ -14,6 +14,9 @@ type Config = {
   billingDay: number
   plan: number
   table: PriceTable
+  overrides: PriceTable
+  pricesUrl: string
+  pricesDate: string
   planName?: string
   wantDay: number
   wantPlan: number
@@ -78,6 +81,41 @@ const resolveAccount = async ($: EngineInterface, cfg: Config) => {
   if (!cfg.wantDay && plan.billingDay) cfg.billingDay = plan.billingDay
 }
 
+const DAY = 24 * 60 * 60 * 1000
+
+// Downloads the published prices.json at most once a day (after a failure,
+// again in six hours) and keeps it in the store, where a session offline
+// still finds the last copy.
+const fetchPrices = async ($: EngineInterface, cfg: Config) => {
+  if (!cfg.pricesUrl) return
+  const now = await $.clock.now()
+  const tried = Number((await $.store.get('pricesTried')) ?? 0)
+  const cached = (await $.store.get('prices')) as { fetchedAt?: number } | undefined
+  if (now - (cached?.fetchedAt ?? 0) < DAY || now - tried < DAY / 4) return
+  await $.store.set('pricesTried', now)
+  const res = await $.http.fetch(cfg.pricesUrl)
+  if (!res.ok) return
+  const remote = parseRemote(JSON.parse(res.text))
+  if (remote) await $.store.set('prices', { fetchedAt: now, ...remote })
+}
+
+// The price table from its sources: the setting, the last prices.json, the
+// built-in table, and the estimates sessions have made (`cal:<model>:<sid>`).
+const rebuildTable = async ($: EngineInterface, cfg: Config) => {
+  const cached = (await $.store.get('prices')) as { updated?: string; table?: PriceTable } | undefined
+  const sums: Record<string, { usd: number; units: number }> = {}
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith('cal:')) continue
+    const model = key.slice(4, key.lastIndexOf(':'))
+    const v = (await $.store.get(key)) as { usd: number; units: number }
+    const sum = sums[model] ?? { usd: 0, units: 0 }
+    sums[model] = { usd: sum.usd + v.usd, units: sum.units + v.units }
+  }
+  const estimated: PriceTable = Object.entries(sums).map(([model, v]) => [model, estimatedPrice(v.usd, v.units)])
+  cfg.table = buildTable(cfg.overrides, cached?.table ?? [], estimated)
+  cfg.pricesDate = cached?.updated ?? PRICES_DATE
+}
+
 const refreshBand = async ($: EngineInterface, cfg: Config) => {
   const month = await monthTotal($, cfg)
   const limits = (await $.session.usage()).rateLimits.map(l => ({ kind: l.kind, percentUsed: l.percentUsed }))
@@ -90,6 +128,14 @@ const refreshSession = async ($: EngineInterface, cfg: Config) => {
   const sid = await $.session.id()
   const rows = await scan($, 0, sid)
   const now = await $.clock.now()
+  // A model no list prices: Claude Code's own count for the session says what
+  // it cost, and so what it charges per token.
+  const engine = (await $.session.usage()).cost?.usd
+  const learned = engine === undefined ? undefined : calibrate(rows, cfg.table, engine)
+  if (learned) {
+    await $.store.set(`cal:${learned.model}:${sid}`, { usd: learned.usd, units: learned.units })
+    await rebuildTable($, cfg)
+  }
   const all = summarize(rows, cfg.table)
   const period = periodStart(now, cfg.billingDay)
   await update($, ledger, l => ({ ...l, session: all.total, byModel: all.byModel }))
@@ -135,7 +181,7 @@ const monthView = async ($: EngineInterface, cfg: Config): Promise<MonthView> =>
     days: Object.entries(s.byDay).sort(([a], [b]) => a.localeCompare(b)),
     projects: Object.entries(s.byProject).sort(([, a], [, b]) => b - a).slice(0, 15),
     byModel: s.byModel,
-    pricesDate: PRICES_DATE,
+    pricesDate: cfg.pricesDate,
   }
 }
 
@@ -202,7 +248,10 @@ export const register: Register = (on, options) => {
   const cfg: Config = {
     billingDay: wantDay || 1,
     plan: wantPlan,
-    table: priceTable(String(options.prices ?? '')),
+    overrides: parseOverrides(String(options.prices ?? '')),
+    table: buildTable(parseOverrides(String(options.prices ?? ''))),
+    pricesUrl: String(options.pricesUrl ?? ''),
+    pricesDate: PRICES_DATE,
     wantDay,
     wantPlan,
   }
@@ -215,6 +264,9 @@ export const register: Register = (on, options) => {
     $.ui.status(undefined)
     void resolveAccount($, cfg)
       .catch(() => undefined)
+      .then(() => fetchPrices($, cfg))
+      .catch(() => undefined)
+      .then(() => rebuildTable($, cfg))
       .then(() => refreshSoon($, cfg))
       .then(() => importOnce($, cfg))
 
@@ -270,7 +322,7 @@ export const register: Register = (on, options) => {
       plan: cfg.plan,
       limits: b.limits,
       byModel: l.byModel,
-      pricesDate: PRICES_DATE,
+      pricesDate: cfg.pricesDate,
       planLabel: [
         cfg.planName,
         cfg.plan ? `${usd(cfg.plan)}/month` : undefined,

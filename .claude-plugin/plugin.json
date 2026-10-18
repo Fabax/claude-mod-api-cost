@@ -1,6 +1,6 @@
 {
   "name": "api-cost",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Shows what each request, the session and the billing month would cost at Claude API list prices, read from the transcripts",
   "author": {
     "name": "Fabax"
@@ -27,6 +27,12 @@
       "title": "Price overrides",
       "description": "JSON of model prefix to [input, output, cache read] USD per million tokens, e.g. {\"opus-5-5\": [4, 20, 0.2]}",
       "default": ""
+    },
+    "pricesUrl": {
+      "type": "string",
+      "title": "Prices URL",
+      "description": "Where the mod downloads up-to-date model prices once a day (the prices.json in its repository); empty uses the built-in table only",
+      "default": "https://raw.githubusercontent.com/Fabax/claude-mod-api-cost/main/prices.json"
     }
   }
 }

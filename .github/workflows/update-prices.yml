@@ -1,0 +1,41 @@
+# Proposes updates to prices.json from LiteLLM's public price list, as a pull
+# request to review against Anthropic's pricing page before merging. Installs
+# of the mod download prices.json from the default branch once a day.
+#
+# Needs: Settings > Actions > General > Workflow permissions >
+# "Allow GitHub Actions to create and approve pull requests".
+name: Update prices
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Merge LiteLLM's Claude prices into prices.json
+        id: merge
+        run: echo "result=$(python3 scripts/update_prices.py prices.json "$RUNNER_TEMP/pr-body.md")" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the pull request
+        if: steps.merge.outputs.result == 'changed'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: update-prices
+          delete-branch: true
+          add-paths: prices.json
+          commit-message: Update prices.json from LiteLLM
+          title: Update model prices
+          body-path: ${{ runner.temp }}/pr-body.md

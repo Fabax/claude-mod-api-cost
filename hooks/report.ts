@@ -8,7 +8,8 @@ export const summarize = (rows: readonly Row[], table: PriceTable, fromDay = '')
     const [session, project, day, model, fast, input, output, cacheRead, write5m, write1h, web] = row
     if (day < fromDay) continue
     const cost = costOfRow(row, table)
-    const name = `${model}${fast ? ' (fast)' : ''}${priceOf(model, table) ? '' : ' (unpriced)'}`
+    const price = priceOf(model, table)
+    const name = `${model}${fast ? ' (fast)' : ''}${!price ? ' (unpriced)' : price.source === 'estimated' ? ' ≈ estimated' : ''}`
     const line: ModelLine = s.byModel[name] ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0, usd: 0 }
     s.byModel[name] = {
       input: line.input + input,
