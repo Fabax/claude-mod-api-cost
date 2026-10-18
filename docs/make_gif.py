@@ -21,6 +21,7 @@ MAGENTA = (198, 120, 221)
 YELLOW = (229, 192, 123)
 GREEN = (152, 195, 121)
 RED = (224, 108, 117)
+TRACK = (52, 54, 60)
 
 regular = ImageFont.truetype(FONT, SIZE * SCALE, index=0)
 bold = ImageFont.truetype(FONT, SIZE * SCALE, index=1)
@@ -124,8 +125,8 @@ def bars(entries, color, grow):
         fill = round(v / top * width * grow)
         out.append([
             seg(key.ljust(pad) + " ", DIM),
-            seg("█" * fill, YELLOW if v == top else color),
-            seg("░" * (width - fill) + " ", DIM),
+            seg("▆" * fill, YELLOW if v == top else color),
+            seg("▆" * (width - fill), TRACK), seg(" "),
             seg(f"${v * grow:.2f}", TEXT, True),
         ])
     return out
@@ -182,7 +183,7 @@ out = sys.argv[1]
 # Each color of the theme blended into the background in steps, for the
 # antialiased edges of the text.
 colors = [BG, BAR]
-for c in (TEXT, DIM, CLAUDE, CYAN, MAGENTA, YELLOW, GREEN, RED, (255, 95, 86), (255, 189, 46), (39, 201, 63)):
+for c in (TEXT, DIM, TRACK, CLAUDE, CYAN, MAGENTA, YELLOW, GREEN, RED, (255, 95, 86), (255, 189, 46), (39, 201, 63)):
     for step in range(1, 17):
         t = step / 16
         colors.append(tuple(round(b + (v - b) * t) for b, v in zip(BG, c)))

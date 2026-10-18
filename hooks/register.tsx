@@ -34,6 +34,7 @@ const C = {
   green: '#98C379',
   red: '#E06C75',
   dim: '#7D828C',
+  track: '#34363C',
 }
 
 // A command's text as the views are filed: without the plugin's prefix, its
@@ -348,8 +349,9 @@ export const register: Register = (on, options) => {
         return (
           <Text wrap="truncate-end">
             <Text color={C.dim}>{(key.length > pad ? key.slice(0, pad - 1) + '…' : key).padEnd(pad)} </Text>
-            <Text color={v === max ? C.yellow : color}>{'█'.repeat(fill)}</Text>
-            <Text color={C.dim}>{'░'.repeat(width - fill)} </Text>
+            <Text color={v === max ? C.yellow : color}>{'▆'.repeat(fill)}</Text>
+            <Text color={C.track}>{'▆'.repeat(width - fill)}</Text>
+            <Text> </Text>
             <Text weight="bold">{money(v)}</Text>
           </Text>
         )
