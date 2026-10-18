@@ -1,0 +1,32 @@
+{
+  "name": "api-cost",
+  "version": "0.6.0",
+  "description": "Shows what each request, the session and the billing month would cost at Claude API list prices, read from the transcripts",
+  "author": {
+    "name": "Fabax"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "billingDay": {
+      "type": "number",
+      "title": "Billing day",
+      "description": "Day of the month (1-28) your subscription renews, when the monthly total resets; 0 reads it from your Claude login",
+      "default": 0,
+      "min": 0,
+      "max": 28
+    },
+    "planPrice": {
+      "type": "number",
+      "title": "Plan price (USD/month)",
+      "description": "What your subscription costs in USD/month (Pro $20, Max $100 or $200); 0 reads the plan from your Claude login",
+      "default": 0,
+      "min": 0
+    },
+    "prices": {
+      "type": "string",
+      "title": "Price overrides",
+      "description": "JSON of model prefix to [input, output, cache read] USD per million tokens, e.g. {\"opus-5-5\": [4, 20, 0.2]}",
+      "default": ""
+    }
+  }
+}

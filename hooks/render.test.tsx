@@ -1,0 +1,65 @@
+import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+
+const ROWS = [
+  ['s1', 'website', '2026-10-01', 'claude-opus-5-5', 0, 0, 1_000_000, 0, 0, 0, 0],
+  ['s1', 'notes', '2026-10-02', 'claude-opus-5-5', 0, 0, 500_000, 0, 0, 0, 3],
+]
+
+const ACCOUNT = { type: 'claude_pro', tier: 'default_claude_ai', since: '2026-01-01T12:00:00Z' }
+
+// The engine beneath the mod: a clock on 2026-10-18, the month already
+// imported, scan.py answering ROWS, and a session with usage limits.
+const engine = (on: On) => {
+  mock.clock(on, { now: new Date(2026, 9, 18, 12).getTime() })
+  mock.store(on, { 'imported:2026-10-01': true })
+  on('process.run', (_$, e) => {
+    const isAccount = e.argv.some(arg => arg.endsWith('account.py'))
+    const stdout = JSON.stringify(isAccount ? ACCOUNT : { rows: ROWS })
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } as never
+  })
+  on('session.id', () => ({ value: 's1' }))
+  on('session.usage', () =>
+    ({ value: {
+      startedAt: 0,
+      context: {},
+      rateLimits: [
+        { kind: 'five_hour', percentUsed: 85 },
+        { kind: 'seven_day', percentUsed: 40 },
+      ],
+      cost: { usd: 30.5 },
+    } }) as never,
+  )
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`month and session outputs draw in color on ${surface}`, { options: { planPrice: 20 } }, async ($, on) => {
+    engine(on)
+    for (const args of ['month', '']) {
+      const { text } = await $.command.run({ command: 'api-cost', args, origin: { kind: 'plugin', name: 'test' } } as never)
+      const ui = await $.ui.mount({
+        plugin: 'api-cost',
+        surface,
+        component: 'CommandOutput',
+        requestId: `msg-${args}`,
+        props: { command: 'api-cost', args, text, isErrored: false, isExpanded: false } as never,
+      })
+      expect(await ui.find({ type: 'Text', text: /\$30\.03/ })).toBeDefined()
+      await ui.unmount()
+    }
+  })
+
+  test(`band shows the month against the plan on ${surface}`, { options: { planPrice: 20 } }, async ($, on) => {
+    engine(on)
+    await $.command.run({ command: 'api-cost', args: 'month', origin: { kind: 'plugin', name: 'test' } } as never)
+    const ui = await $.ui.mount({
+      plugin: 'api-cost',
+      surface,
+      component: 'AbovePrompt',
+      props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
+    })
+    expect(await ui.find({ type: 'Text', text: /150%/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /85%/ })).toBeDefined()
+    await ui.unmount()
+  })
+}

@@ -1,0 +1,13 @@
+{
+  "name": "api-cost",
+  "description": "See what your Claude Code usage would cost at Claude API prices",
+  "owner": {
+    "name": "Fabax"
+  },
+  "plugins": [
+    {
+      "name": "api-cost",
+      "source": "./"
+    }
+  ]
+}
