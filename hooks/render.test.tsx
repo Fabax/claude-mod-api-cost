@@ -11,7 +11,7 @@ const ACCOUNT = { type: 'claude_pro', tier: 'default_claude_ai', since: '2026-01
 // The engine beneath the mod: a clock on 2026-10-18, the month already
 // imported, scan.py answering ROWS, and a session with usage limits.
 const engine = (on: On) => {
-  mock.clock(on, { now: new Date(2026, 9, 18, 12).getTime() })
+  const clock = mock.clock(on, { now: new Date(2026, 9, 18, 12).getTime() })
   mock.store(on, { 'imported:2026-10-01': true })
   on('process.run', (_$, e) => {
     const isAccount = e.argv.some(arg => arg.endsWith('account.py'))
@@ -30,13 +30,26 @@ const engine = (on: On) => {
       cost: { usd: 30.5 },
     } }) as never,
   )
+
+  return clock
 }
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`month and session outputs draw in color on ${surface}`, { options: { planPrice: 20 } }, async ($, on) => {
-    engine(on)
+  test(`month and session outputs grow into place on ${surface}`, { options: { planPrice: 20 } }, async ($, on) => {
+    const clock = engine(on)
     for (const args of ['month', '']) {
       const { text } = await $.command.run({ command: 'api-cost', args, origin: { kind: 'plugin', name: 'test' } } as never)
+      // drawn from a reflowed copy of the text, before the animation moved
+      const first = await $.ui.mount({
+        plugin: 'api-cost',
+        surface,
+        component: 'CommandOutput',
+        requestId: `first-${args}`,
+        props: { command: 'api-cost', args, text: `api-cost:  ${text.replace(/\n/g, '\n ')}`, isErrored: false, isExpanded: false } as never,
+      })
+      expect(await first.find({ type: 'Text', text: /\$0\.00/ })).toBeDefined()
+      await first.unmount()
+      await clock.advance(2000)
       const ui = await $.ui.mount({
         plugin: 'api-cost',
         surface,

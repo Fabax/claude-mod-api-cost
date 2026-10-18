@@ -23,6 +23,22 @@ const EMPTY: Ledger = { session: 0, requestBase: 0, byModel: {} }
 const ledger = atom({ plugin: 'api-cost', key: 'ledger' } as const, EMPTY)
 const band = atom({ plugin: 'api-cost', key: 'band' } as const, { month: 0, plan: 0, limits: [] } as Band)
 const views = atom({ plugin: 'api-cost', key: 'views' } as const, {} as Record<string, View>)
+const grow = atom({ plugin: 'api-cost', key: 'grow' } as const, {} as Record<string, number>)
+
+// The palette of the README's demo, fixed rather than the theme's.
+const C = {
+  claude: '#D97757',
+  cyan: '#56B6C2',
+  magenta: '#C678DD',
+  yellow: '#E5C07B',
+  green: '#98C379',
+  red: '#E06C75',
+  dim: '#7D828C',
+}
+
+// A command's text as the views are filed: without the plugin's prefix, its
+// whitespace folded, so a row drawn from a reflowed copy still finds its view.
+const viewKey = (text: string) => text.replace(/^api-cost:\s*/, '').replace(/\s+/g, ' ').trim()
 
 // The transcripts are the record: scan.py reads them (they can pass the 4 MiB
 // a plugin read takes) and returns token rows, priced here.
@@ -110,6 +126,7 @@ const monthView = async ($: EngineInterface, cfg: Config): Promise<MonthView> =>
 
   return {
     kind: 'month',
+    id: `month-${now}`,
     period,
     total: s.total,
     plan: cfg.plan,
@@ -145,10 +162,23 @@ const textOf = (v: View): string =>
         ...(Object.keys(v.byModel).length ? ['By model (this session):', ...modelLines(v.byModel)] : []),
       ].join('\n')
 
-// Keeps the view under its text (the last 20) and answers that text.
+// Grows a view's bars and amounts from nothing over about 0.6 s, eased.
+const animate = async ($: EngineInterface, id: string) => {
+  await $.clock.sleep(120)
+  for (let step = 1; step <= 12; step++) {
+    const g = 1 - (1 - step / 12) ** 3
+    await update($, grow, all => ({ ...all, [id]: g }))
+    await $.clock.sleep(50)
+  }
+}
+
+// Keeps the view under its text (the last 20), starts its animation and
+// answers that text.
 const answer = async ($: EngineInterface, view: View) => {
   const text = textOf(view)
-  await update($, views, all => Object.fromEntries([...Object.entries(all), [text, view] as const].slice(-20)))
+  await update($, views, all => Object.fromEntries([...Object.entries(all), [viewKey(text), view] as const].slice(-20)))
+  await update($, grow, all => Object.fromEntries([...Object.entries(all), [view.id, 0] as const].slice(-20)))
+  void animate($, view.id).catch(() => undefined)
 
   return { text }
 }
@@ -161,7 +191,7 @@ const importOnce = async ($: EngineInterface, cfg: Config) => {
   await refreshBand($, cfg)
 }
 
-const limitColor = (pct: number) => (pct >= 80 ? 'error' : pct >= 50 ? 'warning' : 'success')
+const limitColor = (pct: number) => (pct >= 80 ? C.red : pct >= 50 ? C.yellow : C.green)
 const limitLabel = (kind: string) => ({ five_hour: '5h', seven_day: '7d', spend_limit: 'spend' })[kind] ?? kind
 const k = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${(n / 1000).toFixed(1)}k`)
 
@@ -198,7 +228,7 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
-    void refreshSoon($, cfg, true)
+    void refreshSoon($, cfg, true).catch(() => undefined)
 
     return next(e)
   })
@@ -230,6 +260,7 @@ export const register: Register = (on, options) => {
     const usage = await $.session.usage()
     const view: SessionView = {
       kind: 'session',
+      id: `session-${await $.clock.now()}`,
       request: l.session - l.requestBase,
       session: l.session,
       ...(usage.cost ? { engine: usage.cost.usd } : {}),
@@ -259,21 +290,21 @@ export const register: Register = (on, options) => {
     const l = await read($, ledger)
     const b = await read($, band)
     const share = b.plan > 0 ? Math.round((b.month / b.plan) * 100) : 0
-    const sep = <Text dimColor> │ </Text>
+    const sep = <Text color={C.dim}> │ </Text>
 
     return (
       <Box flexDirection="row" flexWrap="wrap">
-        <Text color="claude" weight="bold">◆ API </Text>
-        <Text color="cyan" weight="bold">{usd(l.session - l.requestBase)}</Text>
-        <Text dimColor> req</Text>
+        <Text color={C.claude} weight="bold">◆ API </Text>
+        <Text color={C.cyan} weight="bold">{usd(l.session - l.requestBase)}</Text>
+        <Text color={C.dim}> req</Text>
         {sep}
-        <Text color="magenta" weight="bold">{usd(l.session)}</Text>
-        <Text dimColor> session</Text>
+        <Text color={C.magenta} weight="bold">{usd(l.session)}</Text>
+        <Text color={C.dim}> session</Text>
         {sep}
-        <Text color="warning" weight="bold">{usd(b.month)}</Text>
-        {b.plan > 0 ? <Text dimColor> / {usd(b.plan)} plan </Text> : <Text dimColor> month</Text>}
+        <Text color={C.yellow} weight="bold">{usd(b.month)}</Text>
+        {b.plan > 0 ? <Text color={C.dim}> / {usd(b.plan)} plan </Text> : <Text color={C.dim}> month</Text>}
         {b.plan > 0 ? (
-          <Text color={share >= 100 ? 'success' : 'text'} weight="bold">
+          <Text color={share >= 100 ? C.green : undefined} weight="bold">
             {share}%
           </Text>
         ) : null}
@@ -281,7 +312,7 @@ export const register: Register = (on, options) => {
         {b.limits.map((lim: Limit, i: number) => (
           <Text>
             {i ? <Text> </Text> : null}
-            <Text dimColor>{limitLabel(lim.kind)} </Text>
+            <Text color={C.dim}>{limitLabel(lim.kind)} </Text>
             <Text color={limitColor(lim.percentUsed)} weight="bold">
               {Math.round(lim.percentUsed)}%
             </Text>
@@ -294,15 +325,16 @@ export const register: Register = (on, options) => {
   // The command's output, drawn in color in its row.
   on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
     if (e.props.command !== 'api-cost' || e.props.isErrored) return next(e)
-    const all = await read($, views)
-    const view = all[e.props.text] ?? all[e.props.text.replace(/^api-cost: /, '')]
+    const view = (await read($, views))[viewKey(e.props.text)]
     if (!view) return next(e)
     const { Box, Text } = $.ui.resolve(e)
-    const width = Math.max(10, Math.min(30, (e.viewport?.columns ?? 100) - 60))
+    const g = (await read($, grow))[view.id] ?? 1
+    const columns = e.viewport?.columns ?? 100
+    const money = (n: number) => usd(n * g)
 
     const heading = (title: string) => (
       <Box marginTop={1}>
-        <Text color="claude" weight="bold">
+        <Text color={C.claude} weight="bold">
           {title}
         </Text>
       </Box>
@@ -310,14 +342,15 @@ export const register: Register = (on, options) => {
     const bars = (entries: [string, number][], color: string) => {
       const max = Math.max(0, ...entries.map(([, v]) => v))
       const pad = Math.min(28, Math.max(0, ...entries.map(([key]) => key.length)))
+      const width = Math.max(10, Math.min(30, columns - pad - 24))
       return entries.map(([key, v]) => {
-        const fill = max ? Math.round((v / max) * width) : 0
+        const fill = max ? Math.round((v / max) * width * g) : 0
         return (
-          <Text>
-            <Text dimColor>{(key.length > pad ? key.slice(0, pad - 1) + '…' : key).padEnd(pad)} </Text>
-            <Text color={v === max ? 'warning' : color}>{'█'.repeat(fill)}</Text>
-            <Text dimColor>{'░'.repeat(width - fill)} </Text>
-            <Text weight="bold">{usd(v)}</Text>
+          <Text wrap="truncate-end">
+            <Text color={C.dim}>{(key.length > pad ? key.slice(0, pad - 1) + '…' : key).padEnd(pad)} </Text>
+            <Text color={v === max ? C.yellow : color}>{'█'.repeat(fill)}</Text>
+            <Text color={C.dim}>{'░'.repeat(width - fill)} </Text>
+            <Text weight="bold">{money(v)}</Text>
           </Text>
         )
       })
@@ -326,24 +359,24 @@ export const register: Register = (on, options) => {
       Object.entries(byModel)
         .sort(([, a], [, b]) => b.usd - a.usd)
         .map(([model, t]) => (
-          <Text>
+          <Text wrap="truncate-end">
             <Text weight="bold">{model} </Text>
-            <Text color="warning" weight="bold">
-              {usd(t.usd)}
+            <Text color={C.yellow} weight="bold">
+              {money(t.usd)}
             </Text>
-            <Text dimColor>
+            <Text color={C.dim}>
               {'  '}in {k(t.input)} · out {k(t.output)} · cache read {k(t.cacheRead)} · cache write {k(t.cacheWrite)}
               {t.webSearches ? ` · ${t.webSearches} web searches` : ''}
             </Text>
           </Text>
         ))
     const row = (label: string, value: string, color: string, note?: string) => (
-      <Text>
-        <Text dimColor>{label.padEnd(16)}</Text>
+      <Text wrap="truncate-end">
+        <Text color={C.dim}>{label.padEnd(18)}</Text>
         <Text color={color} weight="bold">
           {value}
         </Text>
-        {note ? <Text dimColor> {note}</Text> : null}
+        {note ? <Text color={C.dim}> {note}</Text> : null}
       </Text>
     )
     const planNote = (total: number, plan: number) =>
@@ -351,46 +384,46 @@ export const register: Register = (on, options) => {
 
     if (view.kind === 'month') {
       return (
-        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+        <Box flexDirection="column" borderStyle="round" borderColor={C.claude} paddingX={1}>
           <Text>
-            <Text color="claude" weight="bold">
+            <Text color={C.claude} weight="bold">
               ◆ Billing month since {view.period}
             </Text>
-            <Text dimColor> · {view.sessions} sessions</Text>
+            <Text color={C.dim}> · {view.sessions} sessions</Text>
           </Text>
-          {row('API-equivalent', usd(view.total), 'warning', planNote(view.total, view.plan))}
+          {row('API-equivalent', money(view.total), C.yellow, planNote(view.total, view.plan))}
           {heading('By day')}
-          {bars(view.days.map(([day, v]) => [day.slice(5), v]), 'cyan')}
+          {bars(view.days.map(([day, v]) => [day.slice(5), v]), C.cyan)}
           {heading('By project')}
-          {bars(view.projects, 'magenta')}
+          {bars(view.projects, C.magenta)}
           {heading('By model')}
           {models(view.byModel)}
           <Box marginTop={1}>
-            <Text dimColor>Prices as of {view.pricesDate} · override them in /config</Text>
+            <Text color={C.dim}>Prices as of {view.pricesDate} · override them in /config</Text>
           </Box>
         </Box>
       )
     }
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+      <Box flexDirection="column" borderStyle="round" borderColor={C.claude} paddingX={1}>
         <Text>
-          <Text color="claude" weight="bold">
+          <Text color={C.claude} weight="bold">
             ◆ API-equivalent cost
           </Text>
-          <Text dimColor> · list prices as of {view.pricesDate}</Text>
+          <Text color={C.dim}> · list prices as of {view.pricesDate}</Text>
         </Text>
-        {row('Last request', usd(view.request), 'cyan')}
-        {row('Session', usd(view.session), 'magenta', view.engine !== undefined ? `Claude Code counts ${usd(view.engine)}` : undefined)}
-        {row('Plan', view.planLabel, 'claude', `(${view.planSource})`)}
-        {row(`Month since ${view.period.slice(5)}`, usd(view.month), 'warning', planNote(view.month, view.plan))}
+        {row('Last request', money(view.request), C.cyan)}
+        {row('Session', money(view.session), C.magenta, view.engine !== undefined ? `Claude Code counts ${usd(view.engine)}` : undefined)}
+        {row('Plan', view.planLabel, C.claude, `(${view.planSource})`)}
+        {row(`Month since ${view.period.slice(5)}`, money(view.month), C.yellow, planNote(view.month, view.plan))}
         {view.limits.length ? (
           <Text>
-            <Text dimColor>{'Usage limits'.padEnd(16)}</Text>
+            <Text color={C.dim}>{'Usage limits'.padEnd(18)}</Text>
             {view.limits.map((lim, i) => (
               <Text>
-                {i ? <Text dimColor> · </Text> : null}
-                <Text dimColor>{limitLabel(lim.kind)} </Text>
+                {i ? <Text color={C.dim}> · </Text> : null}
+                <Text color={C.dim}>{limitLabel(lim.kind)} </Text>
                 <Text color={limitColor(lim.percentUsed)} weight="bold">
                   {Math.round(lim.percentUsed)}%
                 </Text>
@@ -401,7 +434,7 @@ export const register: Register = (on, options) => {
         {Object.keys(view.byModel).length ? heading('By model (this session)') : null}
         {models(view.byModel)}
         <Box marginTop={1}>
-          <Text dimColor>/api-cost month · the billing month by day, project and model</Text>
+          <Text color={C.dim}>/api-cost month · the billing month by day, project and model</Text>
         </Box>
       </Box>
     )

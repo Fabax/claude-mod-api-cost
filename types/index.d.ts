@@ -26,6 +26,7 @@ export type Band = { month: number; plan: number; limits: Limit[] }
 
 export type SessionView = {
   kind: 'session'
+  id: string
   request: number
   session: number
   engine?: number
@@ -41,6 +42,7 @@ export type SessionView = {
 
 export type MonthView = {
   kind: 'month'
+  id: string
   period: string
   total: number
   plan: number
@@ -56,6 +58,6 @@ export type View = SessionView | MonthView
 
 declare module 'claude-code' {
   interface PluginState {
-    'api-cost': { ledger: Ledger; band: Band; views: Record<string, View> }
+    'api-cost': { ledger: Ledger; band: Band; views: Record<string, View>; grow: Record<string, number> }
   }
 }
