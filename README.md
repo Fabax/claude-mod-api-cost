@@ -4,9 +4,9 @@ A Claude Code mod that shows what your usage would cost if you paid Claude API
 list prices instead of a subscription: for the current request, the session,
 and your billing month, compared with what your plan costs.
 
-```
-◆ API  $0.12 req │ $4.80 session │ $173.48 / $20.00 plan 867% │ 5h 23% 7d 8%
-```
+![The band above the prompt, then /api-cost and /api-cost month](docs/demo.gif)
+
+<sub>A mockup with sample data, drawn by `docs/make_gif.py` (Pillow): `python3 docs/make_gif.py docs/demo.gif`.</sub>
 
 ## Install
 
