@@ -36,7 +36,9 @@ Needs `python3` (on macOS it comes with the Xcode command line tools).
 ## What it shows
 
 - **The band above the prompt**: the last request, the session, the billing
-  month against your plan, and your 5-hour and weekly usage limits.
+  month against your plan, and your 5-hour and weekly usage limits. It moves
+  as each model response ends, and settles on the transcript's exact figures
+  when the turn does.
 - **`/api-cost`**: the same in a panel, with your plan and the session by model.
 - **`/api-cost month`**: the billing month by day, by project and by model.
 

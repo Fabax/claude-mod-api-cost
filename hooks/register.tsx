@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
-import type { Band, Ledger, Limit, ModelLine, MonthView, SessionView, View } from '../types'
+import type { Band, Ledger, Limit, ModelLine, MonthView, SessionView, Summary, View } from '../types'
 import { detectPlan } from './account'
 import type { Account } from './account'
 import { periodStart, periodStartMs } from './period'
@@ -142,6 +142,36 @@ const refreshSession = async ($: EngineInterface, cfg: Config) => {
   await $.store.set(`m:${period}:${sid}`, summarize(rows, cfg.table, period).total)
 }
 
+// Adds one response's cost the moment it ends, from the usage the API
+// reported, so the band moves during a turn rather than after it. It counts
+// every cache write as 1-hour and no fast mode or web search: the transcript
+// read when the turn ends puts the exact figures in its place.
+const addStep = async ($: EngineInterface, cfg: Config, u: TurnUsage) => {
+  const prompt = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+  const model = u.model.includes('haiku-5-5') && prompt > 100_000 ? `${u.model}@long` : u.model
+  const row: Row = [await $.session.id(), '', '', model, 0, u.input_tokens, u.output_tokens, u.cache_read_input_tokens, 0, u.cache_creation_input_tokens, 0]
+  const s = summarize([row], cfg.table)
+  await update($, ledger, l => ({ ...l, session: l.session + s.total, byModel: addLines(l.byModel, s.byModel) }))
+  await update($, band, b => ({ ...b, month: b.month + s.total }))
+}
+
+const addLines = (a: Summary['byModel'], b: Summary['byModel']): Summary['byModel'] => {
+  const out = { ...a }
+  for (const [name, t] of Object.entries(b)) {
+    const line = out[name] ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0, usd: 0 }
+    out[name] = {
+      input: line.input + t.input,
+      output: line.output + t.output,
+      cacheRead: line.cacheRead + t.cacheRead,
+      cacheWrite: line.cacheWrite + t.cacheWrite,
+      webSearches: line.webSearches + t.webSearches,
+      usd: line.usd + t.usd,
+    }
+  }
+
+  return out
+}
+
 let running: Promise<void> | undefined
 
 // One refresh at a time; a second asked for while one runs follows it. The
@@ -279,6 +309,24 @@ export const register: Register = (on, options) => {
 
     return next(e)
   }).catch(($, e, next) => next(e))
+
+  // Each model response, a subagent's too, as it ends.
+  on('turn.step', async function* ($, e, next) {
+    const r = yield* next(e)
+    if (r.usage) void addStep($, cfg, r.usage).catch(() => undefined)
+
+    return r
+  })
+
+  // The usage limits as each response reports them.
+  on('session.measure', async ($, e, next) => {
+    if (e.changed.includes('rateLimits')) {
+      const limits = e.rateLimits.map(l => ({ kind: l.kind, percentUsed: l.percentUsed }))
+      await update($, band, b => ({ ...b, limits }))
+    }
+
+    return next(e)
+  })
 
   on('turn.complete', async ($, e, next) => {
     void refreshSoon($, cfg, true).catch(() => undefined)

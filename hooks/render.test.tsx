@@ -76,3 +76,27 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+test('band adds each response as it ends, before the turn does', { options: { planPrice: 20 } }, async ($, on) => {
+  engine(on)
+  const usage = { model: 'claude-opus-5-5', input_tokens: 0, output_tokens: 100_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage } as never
+  })
+  on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
+  on('session.measure', (_$, e) => ({ changed: e.changed }) as never)
+  await $.command.run({ command: 'api-cost', args: '', origin: { kind: 'plugin', name: 'test' } } as never)
+  await $.prompt.submit({ text: 'go' } as never)
+  for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) void _
+  await $.session.measure({ context: {}, rateLimits: [{ kind: 'five_hour', percentUsed: 95 }], changed: ['rateLimits'] } as never)
+  const ui = await $.ui.mount({
+    plugin: 'api-cost',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 100 } as never,
+  })
+  expect(await ui.find({ type: 'Text', text: /^\$2\.00$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^\$32\.03$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /95%/ })).toBeDefined()
+  await ui.unmount()
+})

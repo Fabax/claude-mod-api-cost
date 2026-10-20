@@ -1,6 +1,6 @@
 {
   "name": "api-cost",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Shows what each request, the session and the billing month would cost at Claude API list prices, read from the transcripts",
   "author": {
     "name": "Fabax"
