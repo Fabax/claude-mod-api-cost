@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-20",
+  "updated": "2026-11-14",
   "source": "Anthropic list prices, USD per million tokens. Updates are proposed by .github/workflows/update-prices.yml and reviewed before merging.",
   "models": {
     "haiku-5-5@long": {
@@ -22,6 +22,13 @@
       "cacheRead": 0.25,
       "write5m": 12.5,
       "write1h": 20.0
+    },
+    "mythos-5-2": {
+      "input": 8.0,
+      "output": 40.0,
+      "cacheRead": 0.2,
+      "write5m": 10.0,
+      "write1h": 16.0
     },
     "sonnet-4-5": {
       "input": 3.0,
@@ -50,6 +57,13 @@
       "cacheRead": 0.25,
       "write5m": 12.5,
       "write1h": 20.0
+    },
+    "fable-5-2": {
+      "input": 8.0,
+      "output": 40.0,
+      "cacheRead": 0.2,
+      "write5m": 10.0,
+      "write1h": 16.0
     },
     "haiku-3-5": {
       "input": 0.8,
